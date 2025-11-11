@@ -1,0 +1,53 @@
+name: Terraform (dev)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  TF_IN_AUTOMATION: "true"
+  AWS_REGION: eu-west-2
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      # For simplicity, use long-lived keys stored as GitHub Secrets.
+      # Later we can switch to AWS OIDC role (best practice).
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init (remote backend)
+        working-directory: infra/live/dev
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Validate
+        working-directory: infra/live/dev
+        run: terraform validate
+
+      - name: Plan
+        if: github.event_name != 'push'
+        working-directory: infra/live/dev
+        run: terraform plan -var="aws_region=${{ env.AWS_REGION }}" -out=tfplan.out
+
+      - name: Apply (main only)
+        if: github.event_name == 'push'
+        working-directory: infra/live/dev
+        run: terraform apply -auto-approve -var="aws_region=${{ env.AWS_REGION }}"
