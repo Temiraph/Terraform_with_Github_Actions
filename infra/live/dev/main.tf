@@ -44,6 +44,8 @@ module "compute" {
   name        = local.name
   vpc_id      = module.vpc.vpc_id
   subnet_ids  = module.vpc.public_subnet_ids
+  
+  enable_alb    = false
 
   # total instances (will alternate user data 1/2)
   instance_count   = 4
