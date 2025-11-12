@@ -20,19 +20,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show repo snapshot (debug)
+        run: |
+          echo "HEAD ref: $GITHUB_REF @ $GITHUB_SHA"
+          git --no-pager log --oneline -1 || true
+          echo "--- live/dev main.tf (enable_alb) ---"
+          sed -n '1,160p' infra/live/dev/main.tf | nl -ba | sed -n '1,160p' | grep -n 'enable_alb' -n || true
+          echo "--- compute module variables (enable_alb) ---"
+          grep -n 'variable "enable_alb"' infra/modules/compute/variables.tf || true
+          echo "--- compute module ALB resources and counts ---"
+          grep -n 'resource "aws_lb" "this"' infra/modules/compute/main.tf || true
+          grep -n 'count *= *' infra/modules/compute/main.tf || true
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
-      # For simplicity, use long-lived keys stored as GitHub Secrets.
-      # Later we can switch to AWS OIDC role (best practice).
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
 
       - name: Init (remote backend)
         working-directory: infra/live/dev
@@ -42,12 +55,12 @@ jobs:
         working-directory: infra/live/dev
         run: terraform validate
 
-      - name: Plan
+      - name: Plan (PR & manual only)
         if: github.event_name != 'push'
         working-directory: infra/live/dev
         run: terraform plan -var="aws_region=${{ env.AWS_REGION }}" -out=tfplan.out
 
-      - name: Apply (main only)
+      - name: Apply (on push to main)
         if: github.event_name == 'push'
         working-directory: infra/live/dev
         run: terraform apply -auto-approve -var="aws_region=${{ env.AWS_REGION }}"
